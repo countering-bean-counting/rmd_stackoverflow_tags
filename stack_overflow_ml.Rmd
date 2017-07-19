@@ -1,0 +1,85 @@
+---
+title: "Stack Overflow Machine Learning"
+author: "Augustina Ragwitz"
+date: "July 18, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(stringr)
+library(tidyr)
+library(zoo)
+```
+
+## What Languages are associated with Machine Learning Questions on Stack Overflow?
+
+Data source: Stack Overflow Questions tagged with "machine-learning"
+
+Query: https://bigquery.cloud.google.com/savedquery/306220071795:152b951785de45338720218507b99e0f
+
+https://storage.googleapis.com/open_source_community_metrics_exports/stackoverflow_tagged_machine_learning.gz
+
+
+```{r}
+so_ml_raw <- read_csv('downloads/stackoverflow_tagged_machine_learning.csv')
+
+so_ml_raw <- so_ml_raw %>% 
+  mutate(asked_date = as.Date(creation_date), asked_month = as.yearmon(asked_date))
+```
+
+```{r}
+# split tags out and remove machine-learning (all of them should have it)
+so_ml_tags <- so_ml_raw %>% separate_rows(tags, sep = "\\|") %>% filter(tags != "machine-learning")
+```
+
+```{r}
+so_ml_tags_summary_all <- so_ml_tags %>% 
+  group_by(asked_month, tags) %>% 
+  summarise(num_questions = n(), 
+            answer_count_sum = sum(answer_count), 
+            comment_count_sum = sum(comment_count)) %>%
+  mutate(responses_sum = answer_count_sum + comment_count_sum,
+         responses_log = round(log(responses_sum + 1)),
+         num_questions_log = round(log(num_questions + 1)))
+
+so_ml_tags_totals <- so_ml_tags_summary_all %>% group_by(tags) %>% 
+  summarise(sum_questions = sum(num_questions))
+
+so_ml_tags_summary_all <- merge(so_ml_tags_summary_all, so_ml_tags_totals, by="tags")
+```
+
+List of Programming Languages - https://github.com/jamhall/programming-languages-csv/blob/fbb12b3c6ba743901d49da824991edcca7c45407/languages.csv
+
+```{r}
+languages_raw <- read_csv('downloads/languages.csv')
+languages_parsed <- languages_raw %>% 
+  mutate(language = str_to_lower(name)) %>%
+  mutate(language = str_replace_all(language, " ", "-")) %>%
+  select(language)
+
+so_ml_tags_summary <- merge(languages_parsed, so_ml_tags_summary_all, by.x = "language", by.y = "tags")
+```
+
+
+```{r}
+ggplot(data = so_ml_tags_summary %>% 
+         filter(num_questions_log > 1 & asked_month > 'Dec 2012'), 
+       aes(x = factor(asked_month), y = num_questions, 
+           fill=reorder(language, -sum_questions))) +
+  geom_bar(stat="identity", position="stack") +
+  ylab("Stack Overflow Questions Tagged machine-learning") +
+  xlab("Month") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  guides(fill=guide_legend(title="Language"))
+
+ggsave("png/stack_overflow_machine_learning_questions_languages.png")
+```
+
+
